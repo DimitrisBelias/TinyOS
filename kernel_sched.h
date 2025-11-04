@@ -92,7 +92,7 @@ enum SCHED_CAUSE {
 };
 
 /* define ptcb */
-struct ptcb* ptcb; 
+struct PTCB; 
 
 /**
   @brief The thread control block
@@ -104,7 +104,7 @@ typedef struct thread_control_block {
 
 	PCB* owner_pcb; /**< @brief This is null for a free TCB */
 
-	struct ptcb* ptcb /*--pointer to PTCB of this thread--*/
+	PTCB* PTCB;    /* Added --pointer to PTCB of this thread--*/
 
 	cpu_context_t context; /**< @brief The thread context */
 	Thread_type type; /**< @brief The type of thread */
