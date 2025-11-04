@@ -52,15 +52,15 @@ typedef struct process_control_block {
   rlnode children_node;   /**< @brief Intrusive node for @c children_list */
   rlnode exited_node;     /**< @brief Intrusive node for @c exited_list */
 
-  rlnode threads_list;    /*list of all threads(PTCB's) of this task*/
-
   CondVar child_exit;     /**< @brief Condition variable for @c WaitChild. 
-
                              This condition variable is  broadcast each time a child
                              process terminates. It is used in the implementation of
                              @c WaitChild() */
 
   FCB* FIDT[MAX_FILEID];  /**< @brief The fileid table of the process */
+
+  rlnode ptcb_list;    /*--Added: list of all threads(PTCB's) of this task--*/
+  int thread_count;    //added
 
 } PCB;
 
