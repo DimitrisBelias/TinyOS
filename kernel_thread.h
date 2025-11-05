@@ -10,7 +10,7 @@
 struct TCB;
 
 
-typedef struct PTCB {
+typedef struct PTCB{
 
 	// --- Connection with Scheduler
 	struct TCB* tcb;		// Kernel thread that scheduler runs
@@ -18,14 +18,14 @@ typedef struct PTCB {
 
 	// ---Body of process thread---//
 	Task task;				// Function that thread executes
-	int arg1;				// Number of arguments passed to the function
+	int argl;				// Number of arguments passed to the function
 	void* args; 				// Pointer to the argument 
 
 
 	// ---Condition for join/detach/exit---
 	int exitval;			// Return value of ThreadJoin
 	int exited;				// Has it stopped?
-	int detached			// Is joinable or not?
+	int detached;			// Is joinable or not?
 	CondVar exit_cv;		// condvar: where joiners sleep
 	int refcount;			// For safe cleanup (joiners/detach)
 
@@ -35,6 +35,7 @@ typedef struct PTCB {
 	
 
 } PTCB;
+
 
 
 
