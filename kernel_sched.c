@@ -150,13 +150,63 @@ static void thread_start()
   Initialize and return a new TCB
 */
 
-TCB* spawn_thread(PCB* pcb, void (*func)())
+TCB* spawn_thread(PCB* pcb,PTCB* ptcb, void (*func)())
 {
 	/* The allocated thread size must be a multiple of page size */
 	TCB* tcb = (TCB*)allocate_thread(THREAD_SIZE);
 
 	/* Set the owner */
 	tcb->owner_pcb = pcb;
+	tcb->ptcb = ptcb; //NEW NEW NEW NEW NEW
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
 
 	/* Initialize the other attributes */
 	tcb->type = NORMAL_THREAD;
@@ -267,6 +317,10 @@ static void sched_register_timeout(TCB* tcb, TimerDuration timeout)
 */
 static void sched_queue_add(TCB* tcb)
 {
+	///// Implementation of MLFQ
+	///// must change rlist_push_back to handle multiple ques
+	///// rlist_push_back(&SCHED[TCB->priority])
+
 	/* Insert at the end of the scheduling list */
 	rlist_push_back(&SCHED, &tcb->sched_node);
 

@@ -18,6 +18,8 @@
 #include "tinyos.h"
 #include "kernel_sched.h"
 
+
+
 /**
   @brief PID state
 
@@ -64,6 +66,17 @@ typedef struct process_control_block {
 
 } PCB;
 
+/*
+	Method to start a thread (not the main one)
+
+*/
+void start_thread();
+
+
+/*
+	Method used to initialize a ptcb
+*/
+PTCB* initialize_ptcb();
 
 /**
   @brief Initialize the process table.

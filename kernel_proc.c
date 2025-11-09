@@ -4,6 +4,8 @@
 #include "kernel_proc.h"
 #include "kernel_streams.h"
 #include "kernel_thread.h"
+#include "tinyos.h"
+
 
 
 /* 
@@ -129,6 +131,35 @@ void start_main_thread()
   Exit(exitval);
 }
 
+void start_thread(){ /// New New New
+  int exitval;
+  TCB* tcb = cur_thread();
+  Task call = tcb->ptcb->task;
+  int argl = tcb->ptcb->argl;
+  void* args = tcb->ptcb->args;
+
+  exitval = call(argl, args);
+  sys_ThreadExit(exitval);
+
+}
+
+PTCB* initialize_ptcb(){
+  PTCB* ptcb = (PTCB*)xmalloc(sizeof(PTCB));
+  ptcb->tcb = NULL;
+  ptcb->task = NULL;
+  ptcb->argl = 0;
+  ptcb->args = NULL;
+  ptcb->exitval = 0;
+  ptcb->refcount = 0;
+  ptcb->detached = 0;
+  ptcb->exited = 0;
+  ptcb->exit_cv = COND_INIT;
+  rlnode_init(&ptcb->ptcb_list_node, ptcb);
+
+  return ptcb;
+}
+
+
 
 /*
 	System call to create a new process.
@@ -184,33 +215,15 @@ Pid_t sys_Exec(Task call, int argl, void* args)
    */
   if(call != NULL) {
     
-      // --- Δημιουργία του PTCB για το main thread ---
-      PTCB* ptcb = malloc(sizeof(PTCB));
-      memset(ptcb, 0, sizeof(*ptcb));
-
-      ptcb->task = call;       // η main συνάρτηση του προγράμματος
-      ptcb->argl = argl;       // παράμετροι του main
-      ptcb->args = args;
-      ptcb->exitval = 0;
-      ptcb->exited = 0;
-      ptcb->detached = 0;
-      ptcb->refcount = 1;
-      cond_init(&ptcb->exit_cv);
-      rlnode_init(&ptcb->ptcb_list_node, ptcb);
-
-      // --- Δημιουργία του TCB για το main thread ---
-      newproc->main_thread = spawn_thread(newproc, start_main_thread);
-
-      // --- Σύνδεση PTCB και TCB ---
-      ptcb->tcb = newproc->main_thread;
-      newproc->main_thread->ptcb = ptcb;
-
-      // --- Σύνδεση PTCB με PCB ---
-      rlist_push_back(&newproc->ptcb_list, &ptcb->ptcb_list_node);
-      newproc->thread_count = 1;
-
-      // --- Ξεκίνημα του thread ---
-      wakeup(newproc->main_thread);
+    PTCB* ptcb = initialize_ptcb();
+    ptcb->tcb = spawn_thread(newproc, ptcb, start_main_thread);
+    rlist_push_front(&newproc->ptcb_list, &ptcb->ptcb_list_node);
+    ptcb->task = newproc->main_task;
+    ptcb->argl = newproc->argl;
+    ptcb->args = newproc->args;
+    newproc->thread_count++;
+    newproc->main_thread=ptcb->tcb;
+    wakeup(ptcb->tcb);
      
   }
 

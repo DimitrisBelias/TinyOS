@@ -2,57 +2,31 @@
 #include "tinyos.h"
 #include "kernel_sched.h"
 #include "kernel_proc.h"
+#include "util.h"
+#include "kernel_cc.h"
+#include "kernel_streams.h"
+#include "kernel_thread.h"
 
 /** 
   @brief Create a new thread in the current process.
   */
 Tid_t sys_CreateThread(Task task, int argl, void* args)
 {
-	
-    // Έλεγχος ορθότητας
-    if (task == NULL) return 0;
+	PCB* curproc = CURPROC;
+  PTCB* ptcb = initialize_ptcb();
+  ptcb->task = task;
+  ptcb->argl = argl;
+  ptcb->args = args;
 
-    PCB* pcb = CURPROC;        // η διεργασία που το καλεί
-    if (pcb == NULL) return 0;
+  ptcb->tcb = spawn_thread(curproc, ptcb, start_thread);
+  Tid_t tid = (Tid_t)(ptcb->tcb->ptcb);
 
-    // --- Δημιουργία και αρχικοποίηση του PTCB ---
-    PTCB* ptcb = malloc(sizeof(PTCB));
-    if (!ptcb) return 0;
+  rlist_push_front(&curproc->ptcb_list, &ptcb->ptcb_list_node);
+  curproc->thread_count++;
 
-    memset(ptcb, 0, sizeof(ptcb));
-    ptcb->task     = task;
-    ptcb->argl     = argl;
-    ptcb->args     = args;
-    ptcb->exitval  = 0;
-    ptcb->exited   = 0;
-    ptcb->detached = 0;
-    ptcb->refcount = 1;  // 1 αναφορά για τον ίδιο του τον εαυτό
+  wakeup(ptcb->tcb);
 
-    cond_init(&ptcb->exit_cv);
-    rlnode_init(&ptcb->ptcb_list_node, ptcb);
-
-    // --- Δημιουργία TCB (kernel-level thread) ---
-    TCB tcb = spawn_thread(pcb, start_process_thread);
-    if (!tcb) {
-        free(ptcb);
-        return 0;
-    }
-
-    // --- Σύνδεση PTCB και TCB ---
-    ptcb->tcb  = tcb;
-    tcb->ptcb  = ptcb;
-
-    // --- Προσθήκη στη λίστα threads του process ---
-    rlist_push_back(&pcb->ptcb_list, &ptcb->ptcb_list_node);
-    pcb->thread_count++;
-
-    // --- Δημιουργία Tid_t ως pointer στο PTCB ---
-    Tid_t tid = (Tid_t)ptcb;
-
-    // --- Ξεκίνα το thread (προσθήκη στο ready queue) ---
-    wakeup(tcb);
-
-    return tid;
+  return tid;
 }
 
 /**
@@ -60,8 +34,9 @@ Tid_t sys_CreateThread(Task task, int argl, void* args)
  */
 Tid_t sys_ThreadSelf()
 {
-  return (Tid_t)(cur_thread()->ptcb);
-	//return (Tid_t) cur_thread();
+  TCB* tcb = cur_thread();
+  Tid_t tid = (Tid_t)tcb->ptcb;
+  return tid;
 }
 
 /**
@@ -70,33 +45,38 @@ Tid_t sys_ThreadSelf()
 int sys_ThreadJoin(Tid_t tid, int* exitval)
 {
 
-    if (tid == 0) return -1;  // άκυρο thread id
+if(tid == NOTHREAD || tid == sys_ThreadSelf())  //Error cases: A thread tries to join a thread with invalid ID or tries to join itself.
+    return -1; 
 
-    PTCB* target = (PTCB*)tid;  // μετατροπή του tid σε pointer προς PTCB
-    if (!target) return -1;
+  PCB* curproc = CURPROC;
+  PTCB *ptcb = (PTCB*)tid;
 
-    // Αν είναι το ίδιο thread με το τρέχον -> λάθος (δεν μπορείς να κάνεις join τον εαυτό σου)
-    if (target == CURTHREAD->ptcb)
-        return -1;
+  rlnode* node = rlist_find(&curproc->ptcb_list, ptcb, NULL); //We look in the processes ptcb list for the thread we try to join. 
+  if(node == NULL )  //If its not found we return NULL and return with -1.                                        
+    return -1;
+  
+  //If we got here it means that we are about to join the given thread.
+    
+  node->ptcb->refcount++;
+  while(node->ptcb->exited==0 && node->ptcb->detached==0){    //We join if its not exited and detached
+    kernel_wait(&node->ptcb->exit_cv, SCHED_USER); //We will get back here only when the thread we joined calls kernel_broadcast(if it becomes detached or if it exis.)
+  }
+  node->ptcb->refcount--;
+  
+  if(node->ptcb->detached==1) //if we came back because the thread we joined became detached then return -1
+    return -1;
 
-    // Αν είναι detached -> αποτυχία (δεν μπορείς να το κάνεις join)
-    if (target->detached)
-        return -1;
+  //If we get here the thread is exited.
 
-    // Αν δεν έχει τελειώσει ακόμα, περίμενε
-    while (!target->exited)
-        cond_wait(&target->exit_cv);
+  if(exitval!=NULL) //if exitval==NULL means that the joiner thread didn't want to save somewhere the exit value of the joined thread.
+    (*exitval)=node->ptcb->exitval;
 
-    // Αν υπάρχει pointer για exitval, αποθήκευσε την τιμή εξόδου
-    if (exitval)
-        *exitval = target->exitval;
-
-    // Μείωσε το refcount — αν φτάσει στο 0, κάνε cleanup
-    target->refcount--;
-    if (target->refcount == 0)
-        free(target); 
-
-    return 0;
+  if(node->ptcb->refcount==0){                //In case that many threads (T1,T2) joined a thread (T3) then when T3 broadcasts T1 and T2 they will not run in parallel
+    rlist_remove(&node->ptcb->ptcb_list_node);//They will be scheduled by our scheduler so one of them will get here first (T1) and it would remove the ptcb                                             //so the other thread (T2) will not be able to find the ptcb and will lead to a segmentation fault.
+    free(node->ptcb);                         //so the other thread T2 will not be able to find ptcb and lead to a segmentation fault.
+    return 0;                                 //Thats why we make sure ONLY the last thread that comes here after the kernel_broadcast will clean the ptcb.
+  }
+return 0;
 
 }
 
@@ -105,80 +85,126 @@ int sys_ThreadJoin(Tid_t tid, int* exitval)
   */
 int sys_ThreadDetach(Tid_t tid)
 {
-
-    if (tid == 0)
-        return -1;
-
-
-
-    PTCB* target = (PTCB*)tid;    // Μετατροπή του thread ID σε pointer
-    if (!target)
-        return -1;
-
-    // Δεν μπορείς να κάνεις detach τον εαυτό σου (προαιρετικός έλεγχος)
-    if (target == CURTHREAD->ptcb)
-        return -1;
-
-    // Αν είναι ήδη detached -> αποτυχία
-    if (target->detached)
-        return -1;
-
-    // Μαρκάρουμε ότι είναι detached
-    target->detached = 1;
-
-    // Αν έχει ήδη τελειώσει (exited == 1), τότε κανείς δεν θα το περιμένει
-    // οπότε μπορούμε να το καθαρίσουμε τώρα.
-    if (target->exited) {
-        target->refcount--;
-        if (target->refcount == 0)
-            free(target);
-    }
-    else {
-        // Διαφορετικά, μειώνουμε το refcount κατά 1 γιατί δεν θα γίνει join
-        target->refcount--;
-    }
-
+  if(tid == NOTHREAD)
+    return -1;
+  PCB* curproc = CURPROC;
+  PTCB *ptcb = (PTCB*)tid;
+  rlnode* node = rlist_find(&curproc->ptcb_list, ptcb, NULL);
+  if(node==NULL)
+    return -1;
+  if(node->ptcb->exited==1){
+    return -1;
+  }
+  else
+  {
+    node->ptcb->detached = 1;
+    kernel_broadcast(&node->ptcb->exit_cv); //We are now detached so we wake up any thread that is waiting for us because there's no reason to wait anymore
     return 0;
+  }
   
 }
 
-/**
-  @brief Terminate the current thread.
-  */
 void sys_ThreadExit(int exitval)
 {
-// Πάρε το τρέχον PTCB
-    PTCB* pt = CURTHREAD->ptcb;
 
-    // Αν κάτι πάει στραβά (ποτέ δεν πρέπει)
-    if (!pt)
-        sched_finish_thread();
-
-    // Αποθήκευση της τιμής εξόδου
-    pt->exitval = exitval;
-    pt->exited  = 1;
-
-    // Αν είναι joinable (όχι detached) -> ξύπνα όσους περιμένουν
-    if (!pt->detached) {
-        cond_broadcast(&pt->exit_cv);
-    } else {
-        // Detached thread -> δεν το περιμένει κανείς, μπορεί να καθαριστεί άμεσα
-        pt->refcount--;
-        if (pt->refcount == 0)
-            free(pt);
-    }
-
-    // Ενημέρωσε το PCB: ένα thread λιγότερο
-    PCB* pcb = CURPROC;
-    if (pcb) {
-        pcb->thread_count--;
-        // Αν δεν έχει απομείνει κανένα thread, η διεργασία τελειώνει
-        if (pcb->thread_count == 0)
-            sys_Exit(pt->exitval);
-    }
-
-    // Τερμάτισε το τρέχον kernel thread (TCB)
-    sched_finish_thread();
+  PCB* curproc = CURPROC;
+  TCB* curthread = cur_thread();
   
+
+
+ if(curproc->thread_count==1){  //We are the last thread.
+
+    
+    rlnode* list = &curthread->owner_pcb->ptcb_list;//We have to clean up all ptcbs that have not been cleaned(because noone joined them).
+  while (rlist_len(list)>0){
+    rlist_remove(list->next);
+    free(list->next->ptcb);
+  }
+ 
+    /* Reparent any children of the exiting process to the 
+       initial task */
+
+    PCB* initpcb = get_pcb(1);
+    while(!is_rlist_empty(& curproc->children_list)) {
+      rlnode* child = rlist_pop_front(& curproc->children_list);
+      child->pcb->parent = initpcb;
+      rlist_push_front(& initpcb->children_list, child);
+    }
+
+    /* Add exited children to the initial task's exited list 
+       and signal the initial task */
+    if(!is_rlist_empty(& curproc->exited_list)) {
+      rlist_append(& initpcb->exited_list, &curproc->exited_list);
+      kernel_broadcast(& initpcb->child_exit);
+    }
+   
+    /* Put me into my parent's exited list */
+  //  if curproc is init process then we know that init doesnt have a parent and if the following code runs we get seg fault
+  //  so we dont run this code in case of init.
+
+    if(get_pid(curproc)!=1){  
+    rlist_push_front(& curproc->parent->exited_list, &curproc->exited_node);
+    kernel_broadcast(& curproc->parent->child_exit);
+    }
+  
+
+  assert(is_rlist_empty(& curproc->children_list));
+  assert(is_rlist_empty(& curproc->exited_list));
+
+
+  /* 
+    Do all the other cleanup we want here, close files etc. 
+   */
+
+  /* Release the args data */
+  if(curproc->args) {
+    free(curproc->args);
+    curproc->args = NULL;
+  }
+
+  /* Clean up FIDT */
+  for(int i=0;i<MAX_FILEID;i++) {
+    if(curproc->FIDT[i] != NULL) {
+      FCB_decref(curproc->FIDT[i]);
+      curproc->FIDT[i] = NULL;
+    }
+  }
+
+
+
+  
+  curthread->ptcb->exitval = exitval;
+  curthread->ptcb->exited = 1;
+  curproc->thread_count--;
+
+  /* Disconnect my main_thread */
+  curproc->main_thread = NULL;
+
+  /* Now, mark the process as exited. */
+  curproc->pstate = ZOMBIE;
+
+  /* Bye-bye cruel world */
+  kernel_sleep(EXITED, SCHED_USER);
+ 
+
+ }
+
+//We get here only if its not the last thread.
+
+  curthread->ptcb->exitval = exitval;
+  curthread->ptcb->exited = 1;
+  curproc->thread_count--;
+ 
+ if(curthread->ptcb->detached==1){  //we delete ptcb because its detached and there's no way any thread would join it.
+  rlist_remove(&curthread->ptcb->ptcb_list_node); //we dont have to broadcast anyone because we already did when we detached the thread in sys_ThreadDetach
+  free(curthread->ptcb);
+ }
+ else                             
+  kernel_broadcast(&curthread->ptcb->exit_cv);//we are not detached and we are exiting --> we have to wakeup everyone who joined us.
+ 
+
+  /* Bye-bye cruel world */
+kernel_sleep(EXITED, SCHED_USER);
+
 }
 

@@ -7,13 +7,13 @@
 #include "util.h"				// For rlnode and intrusive lists
 
 
-struct TCB;
+//typedef struct thread_control_block TCB;
 
 
-typedef struct PTCB{
+typedef struct process_thread_control_block {
 
 	// --- Connection with Scheduler
-	struct TCB* tcb;		// Kernel thread that scheduler runs
+	TCB* tcb;		// Kernel thread that scheduler runs
 
 
 	// ---Body of process thread---//

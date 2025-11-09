@@ -23,6 +23,7 @@
 #include "bios.h"
 #include "tinyos.h"
 #include "util.h"
+#include "kernel_thread.h"
 
 /*****************************
  *
@@ -91,9 +92,7 @@ enum SCHED_CAUSE {
 	SCHED_USER /**< @brief User-space code called yield */
 };
 
-/* define ptcb */
-struct PTCB; 
-
+//struct  PTCB;    // Forward Declaration
 /**
   @brief The thread control block
 
@@ -103,8 +102,7 @@ struct PTCB;
 typedef struct thread_control_block {
 
 	PCB* owner_pcb; /**< @brief This is null for a free TCB */
-
-	PTCB* PTCB;    /* Added --pointer to PTCB of this thread--*/
+  PTCB* ptcb;     // Added -- Pointer to PTCB
 
 	cpu_context_t context; /**< @brief The thread context */
 	Thread_type type; /**< @brief The type of thread */
@@ -205,7 +203,7 @@ TCB* cur_thread();
     @param func The function to execute in the new thread.
     @returns  A pointer to the TCB of the new thread, in the @c INIT state.
 */
-TCB* spawn_thread(PCB* pcb, void (*func)());
+TCB* spawn_thread(PCB* pcb,PTCB* ptcb, void (*func)());
 
 /**
   @brief Wakeup a blocked thread.
