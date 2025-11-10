@@ -104,18 +104,15 @@ int sys_ThreadDetach(Tid_t tid)
   
 }
 
-/**
-  @brief Terminate the current thread.
-  */
 void sys_ThreadExit(int exitval)
 {
     PCB* curproc = CURPROC;
     TCB* curthread = cur_thread();
 
-    /* Case 1: this is the last thread in the process */
+    /* ---------------- CASE 1: Last thread of the process ---------------- */
     if (curproc->thread_count == 1) {
 
-        // free all other ptcbs except current
+        /* Clean up all PTCBs except the current one */
         rlnode* head = &curproc->ptcb_list;
         rlnode* node = head->next;
         while (node != head) {
@@ -128,7 +125,7 @@ void sys_ThreadExit(int exitval)
             node = next;
         }
 
-        /* reparent any children to init process */
+        /* Reparent any children to init process */
         PCB* initpcb = get_pcb(1);
         while (!is_rlist_empty(&curproc->children_list)) {
             rlnode* child = rlist_pop_front(&curproc->children_list);
@@ -136,12 +133,13 @@ void sys_ThreadExit(int exitval)
             rlist_push_front(&initpcb->children_list, child);
         }
 
-        /* move exited children to init’s exited list */
+        /* Move exited children to init’s exited list */
         if (!is_rlist_empty(&curproc->exited_list)) {
             rlist_append(&initpcb->exited_list, &curproc->exited_list);
             kernel_broadcast(&initpcb->child_exit);
         }
 
+        /* If not init process, notify parent */
         if (get_pid(curproc) != 1) {
             rlist_push_front(&curproc->parent->exited_list, &curproc->exited_node);
             kernel_broadcast(&curproc->parent->child_exit);
@@ -150,13 +148,13 @@ void sys_ThreadExit(int exitval)
         assert(is_rlist_empty(&curproc->children_list));
         assert(is_rlist_empty(&curproc->exited_list));
 
-        /* release process arguments */
+        /* Release process arguments */
         if (curproc->args) {
             free(curproc->args);
             curproc->args = NULL;
         }
 
-        /* close file descriptors */
+        /* Close file descriptors */
         for (int i = 0; i < MAX_FILEID; i++) {
             if (curproc->FIDT[i]) {
                 FCB_decref(curproc->FIDT[i]);
@@ -164,30 +162,41 @@ void sys_ThreadExit(int exitval)
             }
         }
 
+        /* Mark this thread and process as exited */
         curthread->ptcb->exitval = exitval;
         curthread->ptcb->exited = 1;
+        kernel_broadcast(&curthread->ptcb->exit_cv); // consistency
         curproc->thread_count--;
 
         curproc->main_thread = NULL;
         curproc->pstate = ZOMBIE;
 
+        /* Sleep forever */
         kernel_sleep(EXITED, SCHED_USER);
-        return; // never returns
+        return;
     }
 
-    /* Case 2: not the last thread */
+    /* ---------------- CASE 2: Normal (not last) thread ---------------- */
     curthread->ptcb->exitval = exitval;
-    curthread->ptcb->exited = 1;
+    curthread->ptcb->exited  = 1;
+    kernel_broadcast(&curthread->ptcb->exit_cv);  // wake all joiners
     curproc->thread_count--;
 
     if (curthread->ptcb->detached) {
-        // safe removal if still in list
-        rlist_remove(&curthread->ptcb->ptcb_list_node);
-        free(curthread->ptcb);
-    } else {
-        kernel_broadcast(&curthread->ptcb->exit_cv);
+        /*
+         * Detached threads may still have joiners that woke up.
+         * Only free now if refcount == 0 (no one holds a pointer).
+         * Otherwise, the last joiner will clean it up after refcount--.
+         */
+        if (curthread->ptcb->refcount == 0) {
+            rlist_remove(&curthread->ptcb->ptcb_list_node);
+            free(curthread->ptcb);
+        }
     }
 
+    /* Sleep permanently — scheduler will clean the TCB. */
     kernel_sleep(EXITED, SCHED_USER);
 }
 
+
+    
