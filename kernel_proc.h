@@ -67,6 +67,34 @@ typedef struct process_control_block {
 
 } PCB;
 
+
+
+typedef struct process_thread_control_block {
+
+	// --- Connection with Scheduler
+	TCB* tcb;		// Kernel thread that scheduler runs
+
+
+	// ---Body of process thread---//
+	Task task;				// Function that thread executes
+	int argl;				// Number of arguments passed to the function
+	void* args; 				// Pointer to the argument 
+
+
+	// ---Condition for join/detach/exit---
+	int exitval;			// Return value of ThreadJoin
+	int exited;				// Has it stopped?
+	int detached;			// Is joinable or not?
+	CondVar exit_cv;		// condvar: where joiners sleep
+	int refcount;			// For safe cleanup (joiners/detach)
+
+
+	// --- Intrusive list: Node inside PTCB list of PCB ---
+	rlnode ptcb_list_node;
+	
+
+} PTCB;
+
 /*
 	Method to start a thread (not the main one)
 

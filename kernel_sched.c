@@ -6,7 +6,6 @@
 #include "kernel_proc.h"
 #include "kernel_sched.h"
 #include "tinyos.h"
-#include "kernel_thread.h"
 
 #ifndef NVALGRIND
 #include <valgrind/valgrind.h>
