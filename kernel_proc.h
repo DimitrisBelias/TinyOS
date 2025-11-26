@@ -95,6 +95,22 @@ typedef struct process_thread_control_block {
 
 } PTCB;
 
+
+typedef struct pipe_control_block{
+		FCB *reader, *writer;
+
+		/* Conditional Variables*/
+		CondVar has_space;				/* Used for blocking writer if no space is available */
+		CondVar has_data;				/* Used for blocking reader if there is no data to be read*/
+
+
+		int w_position, r_position;		/* To do */	
+		char BUFFER[PIPE_BUFFER_SIZE];  /* Bounded cyclic byte buffer */
+
+} pipe_cb;
+
+
+
 /*
 	Method to start a thread (not the main one)
 
