@@ -6,13 +6,14 @@
  *****************************/
 
 #include "tinyos.h"
-#include "kernel_proc.h"
+#include "kernel_pipe.h"
+//#include "kernel_proc.h"
 #include"kernel_streams.h"
 #include "util.h"
 #include "kernel_cc.h"
 #include "kernel_sched.h"
 #include "kernel_dev.h"
-#define PIPE_BUFFER_SIZE 20
+//#define PIPE_BUFFER_SIZE 20
 
 /* Calculates used slots */
 static int pipe_used_slots(pipe_cb* pipe){
