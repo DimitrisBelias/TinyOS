@@ -95,6 +95,9 @@ void SymposiumTable_philosopher(SymposiumTable* S, int i)
   int fmax = S->symp->fmax;
   PHIL* state = S->state;
 
+  // new check 
+  int bites_completed = 0; //counter for bites 
+
   Mutex_Lock(& S->mx);		/* Philosopher arrives in thinking state */
   state[i] = THINKING;
   print_state(N, state, "     %d has arrived\n",i);
@@ -114,6 +117,7 @@ void SymposiumTable_philosopher(SymposiumTable* S, int i)
     Mutex_Unlock(& S->mx);
     
     eat(fmin, fmax);
+    bites_completed++; // new increase the counter
 
     Mutex_Lock(& S->mx);
     state[i] = THINKING;	/* We are done eating, think again */
@@ -125,7 +129,8 @@ void SymposiumTable_philosopher(SymposiumTable* S, int i)
 
   Mutex_Lock(& S->mx);
   state[i] = NOTHERE;		/* We are done (eaten all the bites) */
-  print_state(N, state, "     %d is leaving\n",i);
+  //print_state(N, state, "     %d is leaving\n",i);
+  printf("  Philosopher %d completed with %d/%d bites\n", i, bites_completed, bites);
   Mutex_Unlock(& S->mx);
 }
 

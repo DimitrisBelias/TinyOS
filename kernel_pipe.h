@@ -9,6 +9,6 @@ int pipe_read(*void pipecb_t, char* buf, unsigned int n);
 
 int pipe_write(void* pipecb_t, const char *buf, unsigned int n);
 
-int pipe_reader_close(void* pipe_cb);
+int pipe_reader_close(void* _pipe_cb);
 
-int pipe_writer_clode(void* pipe_cb);
+int pipe_writer_clode(void* _pipe_cb);
