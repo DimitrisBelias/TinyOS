@@ -19,7 +19,6 @@
 #include "kernel_sched.h"
 #include "kernel_thread.h"
 
-#define PIPE_BUFFER_SIZE 20
 
 
 
