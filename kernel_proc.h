@@ -18,6 +18,9 @@
 #include "tinyos.h"
 #include "kernel_sched.h"
 #include "kernel_thread.h"
+#include "kernel_pipe.h"
+
+typedef struct struct_socket_control_block socket_cb;
 
 
 
@@ -33,6 +36,12 @@ typedef enum pid_state_e {
   ALIVE,  /**< @brief The PID is given to a process */
   ZOMBIE  /**< @brief The PID is held by a zombie */
 } pid_state;
+
+enum socket_type{
+  SOCKET_LISTENER,
+  SOCKET_UNBOUND,
+  SOCKET_PEER
+};
 
 /**
   @brief Process Control Block.
@@ -97,6 +106,68 @@ typedef struct process_thread_control_block {
 } PTCB;
 
 
+
+
+
+//NEWW 
+//SOCKETS STRUCTURE
+
+typedef struct listener_socket{
+  rlnode queue;
+  CondVar req_available;
+}listener_socket;
+
+
+typedef struct peer_socket{
+  socket_cb* peer;
+  pipe_cb* write_pipe;
+  pipe_cb* read_pipe;
+}peer_socket;
+
+
+typedef struct unbound_socket{
+  rlnode unbound_sock;
+}unbound_socket;
+
+
+
+typedef struct connection_request{
+  int admitted;
+  socket_cb* peer;
+  CondVar connected_cv;
+  rlnode queue_node;
+
+}connection_request;
+
+
+typedef struct struct_socket_control_block{
+
+  uint refcount;
+  FCB* fcb;
+
+  union{
+    listener_socket listener_s;
+    peer_socket peer_s;
+    unbound_socket unbound_s;
+
+};
+  port_t port;
+
+  enum socket_type type;
+
+}socket_cb;
+
+
+//NEWWW
+//PROCINFO STRUCTURE
+typedef struct procinfo_control_block{
+
+  procinfo info;
+  int PCB_cursor;
+  FCB* fcb;
+  int refcount;
+
+}procinfo_cb;
 
 
 /*
